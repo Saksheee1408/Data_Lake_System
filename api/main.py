@@ -41,9 +41,13 @@ app.add_middleware(
 )
 
 def get_catalog():
+    # Calculate absolute path to catalog in project root (one level up)
+    root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    catalog_db_path = os.path.join(root_dir, "iceberg_catalog.db")
+
     return load_catalog("default", **{
         "type": "sql",
-        "uri": "sqlite:///iceberg_catalog.db", # Path relative to where we run uvicorn
+        "uri": f"sqlite:///{catalog_db_path}",
         "s3.endpoint": "http://localhost:9000",
         "s3.access-key-id": "minioadmin",
         "s3.secret-access-key": "minioadmin",
