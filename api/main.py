@@ -4,7 +4,11 @@ import pandas as pd
 import pyarrow as pa
 from pyiceberg.catalog import load_catalog
 from pyiceberg.exceptions import NoSuchTableError
-from pyiceberg.io.pyarrow import pyarrow_to_schema
+from pyiceberg.schema import Schema
+from pyiceberg.types import (
+    NestedField, StringType, LongType, DoubleType, BooleanType, 
+    TimestampType, DateType, DecimalType, FloatType, IntegerType
+)
 import duckdb
 import io
 import sys
@@ -54,6 +58,48 @@ def get_duckdb_connection():
     con.execute("SET s3_url_style='path';")
     return con
 
+def map_arrow_type_to_iceberg(pa_type):
+    """
+    Simple mapper from PyArrow types to Iceberg types.
+    Expanded as needed for more complex types.
+    """
+    if pa.types.is_int64(pa_type):
+        return LongType()
+    elif pa.types.is_int32(pa_type):
+        return IntegerType()
+    elif pa.types.is_string(pa_type) or pa.types.is_large_string(pa_type):
+        return StringType()
+    elif pa.types.is_float64(pa_type):
+        return DoubleType()
+    elif pa.types.is_float32(pa_type):
+        return FloatType()
+    elif pa.types.is_boolean(pa_type):
+        return BooleanType()
+    elif pa.types.is_timestamp(pa_type):
+        return TimestampType()
+    elif pa.types.is_date32(pa_type) or pa.types.is_date64(pa_type):
+        return DateType()
+    # Fallback to string for unknown types to be safe
+    return StringType()
+
+def infer_iceberg_schema(pa_schema) -> Schema:
+    """
+    Manually constructs an Iceberg Schema from a PyArrow Schema.
+    Assigns field IDs sequentially starting from 1.
+    """
+    fields = []
+    for i, field in enumerate(pa_schema, start=1):
+        iceberg_type = map_arrow_type_to_iceberg(field.type)
+        fields.append(
+            NestedField(
+                field_id=i, 
+                name=field.name, 
+                field_type=iceberg_type, 
+                required=not field.nullable
+            )
+        )
+    return Schema(*fields)
+
 @app.get("/")
 def health_check():
     return {"status": "ok", "message": "Lakehouse API is running"}
@@ -78,8 +124,7 @@ async def ingest_table_dynamic(table_name: str, file: UploadFile = File(...)):
             table = catalog.load_table(full_table_name)
             print(f"Table '{full_table_name}' exists. Appending data...")
             
-            # TODO: In a real prod system, you might want to evolve schema here if new cols exist
-            # For now, we assume schema is compatible or PyIceberg will throw error
+            # TODO: Handle schema evolution if needed
             table.append(pa_table)
             action = "appended"
             
@@ -87,8 +132,9 @@ async def ingest_table_dynamic(table_name: str, file: UploadFile = File(...)):
             # Create Table
             print(f"Table '{full_table_name}' does not exist. Creating...")
             
-            # Convert Arrow Schema to Iceberg Schema
-            iceberg_schema = pyarrow_to_schema(pa_table.schema)
+            # Use custom inference instead of pyarrow_to_schema
+            iceberg_schema = infer_iceberg_schema(pa_table.schema)
+            print(f"Inferred Schema: {iceberg_schema}")
             
             table = catalog.create_table(
                 identifier=full_table_name,
@@ -101,7 +147,7 @@ async def ingest_table_dynamic(table_name: str, file: UploadFile = File(...)):
             "status": "success", 
             "message": f"Successfully {action} data to {full_table_name}",
             "rows": len(df),
-            "schema": str(pa_table.schema)
+            "schema_summary": str(pa_table.schema)
         }
         
     except Exception as e:
@@ -117,17 +163,12 @@ def run_query(sql: str = "SELECT * FROM sales"):
         catalog = get_catalog()
         
         # Auto-register ALL tables in 'default' namespace as Views
-        # This allows queries like "SELECT * FROM products" to work dynamically
         try:
             tables = catalog.list_tables("default")
-            print(f"Found tables: {tables}")
             
             for tbl in tables:
-                # tbl is usually a tuple ('default', 'sales') or just identifier class
-                # PyIceberg list_tables returns list of Identifiers
-                # Let's handle tuple or object
                 if isinstance(tbl, tuple):
-                     tbl_name = tbl[-1] # valid for ('default', 'sales')
+                     tbl_name = tbl[-1]
                 else:
                      tbl_name = tbl.name 
                      
@@ -136,8 +177,6 @@ def run_query(sql: str = "SELECT * FROM sales"):
                 loc = params.metadata_location
                 
                 # Register View
-                # Note: DuckDB queries are case insensitive usually, but let's be safe
-                print(f"Registering view '{tbl_name}' -> {loc}")
                 con.execute(f"CREATE OR REPLACE VIEW {tbl_name} AS SELECT * FROM iceberg_scan('{loc}')")
                 
         except Exception as e:
