@@ -1,11 +1,11 @@
+import pyarrow.compute as pc
 from pyiceberg.catalog import load_catalog
-from pyiceberg.expressions import EqualTo
 
 def delete_data():
-    print("Deleting record where ID=3...")
+    print("Deleting record where ID=3 (Copy-On-Write)...")
     
     try:
-        # 1. Load Table
+        # 1. Load Table and Data
         catalog = load_catalog("default", **{
             "type": "sql",
             "uri": "sqlite:///iceberg_catalog.db",
@@ -15,17 +15,25 @@ def delete_data():
             "s3.region": "us-east-1",
             "warehouse": "s3://warehouse",
         })
-        
         table = catalog.load_table("default.sales")
         
-        # 2. Perform Delete
-        # We delete rows where id == 3
-        # PyIceberg supports boolean expressions for delete
-        table.delete(where=EqualTo("id", 3))
+        current_data = table.scan().to_arrow()
+        print(f"Current rows: {current_data.num_rows}")
         
-        print("[SUCCESS] Deleted record with ID 3.")
-        print(f"[VERIFY] Snapshot Summary: {table.current_snapshot().summary}")
+        # 2. Filter data (Keep everything except ID=3)
+        # We use PyArrow compute for efficiency
+        mask = pc.not_equal(current_data['id'], 3)
+        new_data = current_data.filter(mask)
         
+        if new_data.num_rows == current_data.num_rows:
+            print("[WARN] No records found with ID=3 to delete.")
+        else:
+            # 3. Overwrite the table
+            # This creates a new snapshot with the filtered data
+            table.overwrite(new_data)
+            print(f"[SUCCESS] Deleted. New rows: {new_data.num_rows}")
+            print(f"[VERIFY] Snapshot Summary: {table.current_snapshot().summary}")
+
     except Exception as e:
         print(f"[FAILED] Delete failed: {e}")
 
