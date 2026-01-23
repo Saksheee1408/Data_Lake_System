@@ -17,10 +17,10 @@ def ingest_data():
             "warehouse": "s3://warehouse",
         })
         
-        # 2. Load Table
-        table = catalog.load_table("sales")
+        # 2. Load Table (Use fully qualified name!)
+        table = catalog.load_table("default.sales")
         
-        # 3. Create Data (PyArrow)
+        # 3. Create Data
         data = pa.Table.from_pylist([
             {"id": 1, "amount": 100.50, "transaction_date": date(2023, 1, 1)},
             {"id": 2, "amount": 250.00, "transaction_date": date(2023, 1, 2)},
@@ -29,10 +29,7 @@ def ingest_data():
         
         # 4. Append Data
         table.append(data)
-        print("[SUCCESS] Data appended to 'sales' table.")
-        
-        # 5. Verify (Quick count check via metadata)
-        # Note: accurate count might need scan, but we'll trust the append for now.
+        print("[SUCCESS] Data appended to 'default.sales' table.")
         print(f"[VERIFY] Snapshot Summary: {table.current_snapshot().summary}")
         
     except Exception as e:

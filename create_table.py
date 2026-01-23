@@ -1,13 +1,13 @@
 from pyiceberg.catalog import load_catalog
 from pyiceberg.schema import Schema
 from pyiceberg.types import NestedField, LongType, DecimalType, DateType
+from pyiceberg.exceptions import NamespaceAlreadyExistsError
 
 def create_table():
     print("Initializing Iceberg Catalog & Table...")
     
     try:
-        # 1. Configure Catalog (SQL-based local catalog)
-        # We use a local SQLite file to track the table state (snapshots).
+        # 1. Configure Catalog
         catalog = load_catalog("default", **{
             "type": "sql",
             "uri": "sqlite:///iceberg_catalog.db",
@@ -18,26 +18,36 @@ def create_table():
             "warehouse": "s3://warehouse",
         })
         
-        # 2. Define Schema
+        # 2. Ensure Schema/Namespace 'default' exists
+        try:
+            catalog.create_namespace("default")
+            print("[SUCCESS] Namespace 'default' created.")
+        except NamespaceAlreadyExistsError:
+            print("[INFO] Namespace 'default' already exists.")
+        except Exception as e:
+            # Some catalogs might raise other errors or not support this
+            print(f"[WARN] Could not create namespace: {e}")
+
+        # 3. Define Schema and Create Table
         schema = Schema(
             NestedField(1, "id", LongType(), required=True),
             NestedField(2, "amount", DecimalType(10, 2), required=False),
             NestedField(3, "transaction_date", DateType(), required=False),
         )
         
-        # 3. Create Table
-        table_name = "sales"
+        table_name = "default.sales"
         try:
             catalog.create_table(
                 identifier=table_name,
                 schema=schema,
             )
-            print(f"[SUCCESS] Table '{table_name}' created in Catalog.")
-        except Exception:
-            print(f"[INFO] Table '{table_name}' might already exist.")
+            print(f"[SUCCESS] Table '{table_name}' created.")
+        except Exception as e:
+            # Check if it really failed or just exists
+            print(f"[INFO] Table creation message: {e}")
 
     except Exception as e:
-        print(f"[FAILED] Could not create table: {e}")
+        print(f"[FAILED] Critical error in create_table: {e}")
 
 if __name__ == "__main__":
     create_table()
