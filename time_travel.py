@@ -24,30 +24,24 @@ def time_travel():
             ts = datetime.fromtimestamp(log.timestamp_ms / 1000).strftime('%Y-%m-%d %H:%M:%S')
             print(f"Snapshot ID: {log.snapshot_id} | Time: {ts}")
             
+        if not history:
+            print("[WARN] No history found!")
+            return
+
         # 2. Travel to the FIRST Metadata Version (Original Data)
-        # We want to see the table BEFORE we did deletes/updates.
-        # We can find the metadata file location for a specific snapshot.
-        
-        # Let's pick the oldest snapshot
         first_snapshot_id = history[0].snapshot_id
         print(f"\nTravel Target: Snapshot ID {first_snapshot_id} (The Beginning)")
         
-        # We need to find the specific metadata file for this snapshot.
-        # PyIceberg doesn't give a direct "metadata file path for snapshot X" easily in the high-level API 
-        # for external engines without reloading the table state, but we can cheat:
-        # We simply tell DuckDB to query the table using the `snapshot_id` option!
-        
         con = get_duckdb_connection()
-        
-        # Get current metadata location to point DuckDB to the table ROOT
-        # DuckDB needs the base metadata file, and we pass the snapshot_id as an arg
         current_loc = table.metadata_location
         
         print(f"Querying table AS OF Snapshot {first_snapshot_id}...")
         
-        # DuckDB Iceberg Scan with Snapshot ID
+        # FIX: Use 'version' parameter instead of 'snapshot'
+        # The version should be the snapshot ID as a string or integer depending on exact build,
+        # but usually stringified ID works for 'version'.
         query = f"""
-        SELECT * FROM iceberg_scan('{current_loc}', snapshot={first_snapshot_id})
+        SELECT * FROM iceberg_scan('{current_loc}', version='{first_snapshot_id}')
         """
         
         results = con.execute(query).fetchall()
