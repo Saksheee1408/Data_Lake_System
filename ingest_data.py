@@ -1,33 +1,39 @@
-from db_connection import get_duckdb_connection
+import pyarrow as pa
+from pyiceberg.catalog import load_catalog
+from datetime import date
 
 def ingest_data():
-    print("Ingesting sample data into 'sales'...")
+    print("Ingesting data via PyIceberg...")
     
     try:
-        con = get_duckdb_connection()
+        # 1. Load Catalog
+        catalog = load_catalog("default", **{
+            "type": "sql",
+            "uri": "sqlite:///iceberg_catalog.db",
+            "s3.endpoint": "http://localhost:9000",
+            "s3.access-key-id": "minioadmin",
+            "s3.secret-access-key": "minioadmin",
+            "s3.region": "us-east-1",
+            "warehouse": "s3://warehouse",
+        })
         
-        # 1. Prepare data to insert
-        # We use VALUES clause to generate data on the fly
-        print("Appending 3 records...")
-        query = """
-        COPY (
-            SELECT * FROM (VALUES 
-                (1::BIGINT, 100.50::DECIMAL(10,2), DATE '2023-01-01'),
-                (2::BIGINT, 250.00::DECIMAL(10,2), DATE '2023-01-02'),
-                (3::BIGINT, 50.75::DECIMAL(10,2),  DATE '2023-01-03')
-            ) AS v(id, amount, transaction_date)
-        ) 
-        TO 's3://warehouse/sales' 
-        (FORMAT ICEBERG, MODE 'APPEND');
-        """
+        # 2. Load Table
+        table = catalog.load_table("sales")
         
-        con.execute(query)
-        print("[SUCCESS] 3 records inserted.")
+        # 3. Create Data (PyArrow)
+        data = pa.Table.from_pylist([
+            {"id": 1, "amount": 100.50, "transaction_date": date(2023, 1, 1)},
+            {"id": 2, "amount": 250.00, "transaction_date": date(2023, 1, 2)},
+            {"id": 3, "amount": 50.75,  "transaction_date": date(2023, 1, 3)},
+        ])
         
-        # 2. Verify immediately using read_iceberg
-        # Since we are not using a persistent catalog service, we read the path directly
-        count = con.execute("SELECT COUNT(*) FROM read_iceberg('s3://warehouse/sales')").fetchone()[0]
-        print(f"[VERIFY] Total records in 'sales': {count}")
+        # 4. Append Data
+        table.append(data)
+        print("[SUCCESS] Data appended to 'sales' table.")
+        
+        # 5. Verify (Quick count check via metadata)
+        # Note: accurate count might need scan, but we'll trust the append for now.
+        print(f"[VERIFY] Snapshot Summary: {table.current_snapshot().summary}")
         
     except Exception as e:
         print(f"[FAILED] Data ingestion failed: {e}")
