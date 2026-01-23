@@ -49,7 +49,7 @@ def get_duckdb_connection():
     # Fresh connection for every request to ensure clean state
     con = duckdb.connect(database=':memory:')
     con.execute("INSTALL httpfs; LOAD httpfs;")
-    con.execute("INSTALL iceberg; LOAD httpfs;") 
+    con.execute("INSTALL iceberg; LOAD iceberg;") 
     con.execute("SET s3_endpoint='localhost:9000';")
     con.execute("SET s3_access_key_id='minioadmin';")
     con.execute("SET s3_secret_access_key='minioadmin';")
