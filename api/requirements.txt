@@ -5,3 +5,4 @@ pandas
 pyarrow
 duckdb
 pyiceberg[s3fs,sqlalchemy]
+requests
