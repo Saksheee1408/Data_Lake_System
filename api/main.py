@@ -44,6 +44,11 @@ def get_catalog():
     # Calculate absolute path to catalog in project root (one level up)
     root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     catalog_db_path = os.path.join(root_dir, "iceberg_catalog.db")
+    
+    print(f"DEBUG: Root Dir: {root_dir}")
+    print(f"DEBUG: Catalog Path: {catalog_db_path}")
+    print(f"DEBUG: Catalog DB Exists? {os.path.exists(catalog_db_path)}")
+    print(f"DEBUG: URI: sqlite:///{catalog_db_path}")
 
     return load_catalog("default", **{
         "type": "sql",
