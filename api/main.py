@@ -3,35 +3,19 @@ from fastapi.middleware.cors import CORSMiddleware
 import pandas as pd
 import pyarrow as pa
 from pyiceberg.catalog import load_catalog
-from datetime import date
-from decimal import Decimal
+from pyiceberg.exceptions import NoSuchTableError
+from pyiceberg.io.pyarrow import pyarrow_to_schema
 import duckdb
 import io
 import sys
 import os
 
-# Add parent dir to path so we can import db_connection if needed, 
-# but for now we'll inline the connection logic to keep API self-contained and robust.
+# Add parent dir to path so we can import db_connection if needed
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-try:
-    from db_connection import get_duckdb_connection
-except ImportError:
-    # Fallback if running directly from api folder without setting pythonpath
-    def get_duckdb_connection():
-         con = duckdb.connect(database=':memory:')
-         con.execute("INSTALL httpfs; LOAD httpfs;")
-         con.execute("INSTALL iceberg; LOAD httpfs;") # Try install, might fail if loaded
-         con.execute("SET s3_endpoint='localhost:9000';")
-         con.execute("SET s3_access_key_id='minioadmin';")
-         con.execute("SET s3_secret_access_key='minioadmin';")
-         con.execute("SET s3_use_ssl=false;")
-         con.execute("SET s3_region='us-east-1';")
-         con.execute("SET s3_url_style='path';")
-         return con
 
 app = FastAPI(title="Data Lakehouse API")
 
-# Allow CORS for Angular
+# Allow CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -45,10 +29,7 @@ def get_catalog():
     root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     catalog_db_path = os.path.join(root_dir, "iceberg_catalog.db")
     
-    print(f"DEBUG: Root Dir: {root_dir}")
     print(f"DEBUG: Catalog Path: {catalog_db_path}")
-    print(f"DEBUG: Catalog DB Exists? {os.path.exists(catalog_db_path)}")
-    print(f"DEBUG: URI: sqlite:///{catalog_db_path}")
 
     return load_catalog("default", **{
         "type": "sql",
@@ -60,76 +41,119 @@ def get_catalog():
         "warehouse": "s3://warehouse",
     })
 
+def get_duckdb_connection():
+    # Fresh connection for every request to ensure clean state
+    con = duckdb.connect(database=':memory:')
+    con.execute("INSTALL httpfs; LOAD httpfs;")
+    con.execute("INSTALL iceberg; LOAD httpfs;") 
+    con.execute("SET s3_endpoint='localhost:9000';")
+    con.execute("SET s3_access_key_id='minioadmin';")
+    con.execute("SET s3_secret_access_key='minioadmin';")
+    con.execute("SET s3_use_ssl=false;")
+    con.execute("SET s3_region='us-east-1';")
+    con.execute("SET s3_url_style='path';")
+    return con
+
 @app.get("/")
 def health_check():
     return {"status": "ok", "message": "Lakehouse API is running"}
 
-@app.post("/upload")
-async def upload_csv(file: UploadFile = File(...)):
-    print(f"Receiving file: {file.filename}")
+@app.post("/ingest/{table_name}")
+async def ingest_table_dynamic(table_name: str, file: UploadFile = File(...)):
+    print(f"Receiving file for table: {table_name}")
     try:
         contents = await file.read()
+        # Read CSV to Pandas (auto-detect types)
         df = pd.read_csv(io.BytesIO(contents))
         
-        # 1. Prepare Schema & Data Conversion
-        # We need strict types for Iceberg
-        arrow_schema = pa.schema([
-            pa.field("id", pa.int64(), nullable=False),
-            pa.field("amount", pa.decimal128(10, 2), nullable=True),
-            pa.field("transaction_date", pa.date32(), nullable=True),
-            pa.field("channel", pa.string(), nullable=True)
-        ])
+        # Convert to PyArrow Table (Infer Schema)
+        pa_table = pa.Table.from_pandas(df)
         
-        # Convert DataFrame to list of dicts for safe PyArrow conversion
-        data_rows = []
-        for _, row in df.iterrows():
-            item = {
-                "id": int(row['id']),
-                "amount": Decimal(str(row['amount'])) if pd.notnull(row['amount']) else None,
-                "transaction_date": date.fromisoformat(str(row['transaction_date'])) if pd.notnull(row['transaction_date']) else None,
-                "channel": str(row['channel']) if 'channel' in row and pd.notnull(row['channel']) else None
-            }
-            data_rows.append(item)
-            
-        arrow_table = pa.Table.from_pylist(data_rows, schema=arrow_schema)
-        
-        # 2. Ingest to Iceberg
+        # Get Catalog
         catalog = get_catalog()
-        table = catalog.load_table("default.sales")
-        table.append(arrow_table)
+        full_table_name = f"default.{table_name}"
         
-        return {"status": "success", "message": f"Ingested {len(data_rows)} rows"}
+        try:
+            # Try loading the table
+            table = catalog.load_table(full_table_name)
+            print(f"Table '{full_table_name}' exists. Appending data...")
+            
+            # TODO: In a real prod system, you might want to evolve schema here if new cols exist
+            # For now, we assume schema is compatible or PyIceberg will throw error
+            table.append(pa_table)
+            action = "appended"
+            
+        except NoSuchTableError:
+            # Create Table
+            print(f"Table '{full_table_name}' does not exist. Creating...")
+            
+            # Convert Arrow Schema to Iceberg Schema
+            iceberg_schema = pyarrow_to_schema(pa_table.schema)
+            
+            table = catalog.create_table(
+                identifier=full_table_name,
+                schema=iceberg_schema
+            )
+            table.append(pa_table)
+            action = "created"
+            
+        return {
+            "status": "success", 
+            "message": f"Successfully {action} data to {full_table_name}",
+            "rows": len(df),
+            "schema": str(pa_table.schema)
+        }
         
     except Exception as e:
         print(f"Error: {e}")
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/query")
 def run_query(sql: str = "SELECT * FROM sales"):
     try:
         con = get_duckdb_connection()
-        
-        # Helper: Replace simple table name with fully qualified path if needed (simple hack for UX)
-        # If user says "SELECT * FROM sales", we map it to our iceberg table path logic
-        # Ideally, we should just let them write valid SQL, but let's be helpful.
-        
         catalog = get_catalog()
+        
+        # Auto-register ALL tables in 'default' namespace as Views
+        # This allows queries like "SELECT * FROM products" to work dynamically
         try:
-            table = catalog.load_table("default.sales")
-            # For this demo, we assume 'sales' in SQL refers to the iceberg table
-            # We can register it as a view
-            meta_loc = table.metadata_location
-            con.execute(f"CREATE OR REPLACE VIEW sales AS SELECT * FROM iceberg_scan('{meta_loc}')")
-        except:
-            pass # Maybe table doesn't exist yet
+            tables = catalog.list_tables("default")
+            print(f"Found tables: {tables}")
+            
+            for tbl in tables:
+                # tbl is usually a tuple ('default', 'sales') or just identifier class
+                # PyIceberg list_tables returns list of Identifiers
+                # Let's handle tuple or object
+                if isinstance(tbl, tuple):
+                     tbl_name = tbl[-1] # valid for ('default', 'sales')
+                else:
+                     tbl_name = tbl.name 
+                     
+                fullname = f"default.{tbl_name}"
+                params = catalog.load_table(fullname)
+                loc = params.metadata_location
+                
+                # Register View
+                # Note: DuckDB queries are case insensitive usually, but let's be safe
+                print(f"Registering view '{tbl_name}' -> {loc}")
+                con.execute(f"CREATE OR REPLACE VIEW {tbl_name} AS SELECT * FROM iceberg_scan('{loc}')")
+                
+        except Exception as e:
+            print(f"Warning during view registration: {e}")
             
         # Run Query
+        print(f"Executing SQL: {sql}")
         results = con.execute(sql).fetchdf()
         
-        # Convert to JSON-friendly format (Handling dates/NaNs)
+        # Handle NaN/Inf for JSON serialization
+        results = results.where(pd.notnull(results), None)
+        
         return results.to_dict(orient="records")
         
     except Exception as e:
+         print(f"Query Error: {e}")
          raise HTTPException(status_code=400, detail=str(e))
 
 if __name__ == "__main__":
