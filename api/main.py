@@ -164,7 +164,9 @@ def run_query(sql: str = "SELECT * FROM sales"):
         
         # Auto-register ALL tables in 'default' namespace as Views
         try:
+            print("DEBUG: Listing tables in 'default' namespace...")
             tables = catalog.list_tables("default")
+            print(f"DEBUG: Found tables: {tables}")
             
             for tbl in tables:
                 if isinstance(tbl, tuple):
@@ -173,14 +175,18 @@ def run_query(sql: str = "SELECT * FROM sales"):
                      tbl_name = tbl.name 
                      
                 fullname = f"default.{tbl_name}"
+                print(f"DEBUG: Loading table '{fullname}'...")
                 params = catalog.load_table(fullname)
                 loc = params.metadata_location
                 
                 # Register View
+                print(f"DEBUG: Registering view '{tbl_name}' -> {loc}")
                 con.execute(f"CREATE OR REPLACE VIEW {tbl_name} AS SELECT * FROM iceberg_scan('{loc}')")
                 
         except Exception as e:
             print(f"Warning during view registration: {e}")
+            import traceback
+            traceback.print_exc()
             
         # Run Query
         print(f"Executing SQL: {sql}")
