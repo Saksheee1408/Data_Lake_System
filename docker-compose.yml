@@ -20,11 +20,13 @@ services:
       retries: 3
 
   spark:
-    image: bitnami/spark:3.5
+    image: apache/spark:3.5.0
     container_name: spark
+    user: root
     environment:
-      - SPARK_MODE=master
+      - SPARK_NO_DAEMONIZE=true
     volumes:
       - ./:/app
     depends_on:
       - minio
+    command: /bin/bash -c "while true; do sleep 30; done;"
