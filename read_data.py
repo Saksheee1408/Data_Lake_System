@@ -1,21 +1,34 @@
 from db_connection import get_duckdb_connection
+from pyiceberg.catalog import load_catalog
 
 def read_data():
-    print("Reading data from 'default.sales' using DuckDB...")
+    print("Reading data from 'default.sales'...")
     
     try:
+        # 1. Ask PyIceberg where the current metadata is
+        # We need this because DuckDB doesn't know about our local sqlite catalog
+        catalog = load_catalog("default", **{
+            "type": "sql",
+            "uri": "sqlite:///iceberg_catalog.db",
+            "s3.endpoint": "http://localhost:9000",
+            "s3.access-key-id": "minioadmin",
+            "s3.secret-access-key": "minioadmin",
+            "s3.region": "us-east-1",
+            "warehouse": "s3://warehouse",
+        })
+        
+        table = catalog.load_table("default.sales")
+        metadata_auth_location = table.metadata_location
+        
+        # Strip "s3://" prefix if present and handle S3 path style for DuckDB if needed
+        # But usually DuckDB handles the s3:// path fine if configured.
+        print(f"Current Metadata Location: {metadata_auth_location}")
+        
+        # 2. Query using DuckDB with valid Metadata File
         con = get_duckdb_connection()
         
-        # Path where PyIceberg stored the table. 
-        # Layout: warehouse_path / namespace / table_name
-        table_path = 's3://warehouse/default/sales'
+        query = f"SELECT * FROM iceberg_scan('{metadata_auth_location}')"
         
-        print(f"Querying Iceberg table at: {table_path}")
-        
-        # Use iceberg_scan() explicitly
-        query = f"SELECT * FROM iceberg_scan('{table_path}')"
-        
-        # Execute and fetch all
         results = con.execute(query).fetchall()
         
         print(f"\n[SUCCESS] Found {len(results)} records:")
@@ -28,16 +41,6 @@ def read_data():
             
     except Exception as e:
         print(f"[FAILED] Could not read data: {e}")
-        # Debug: list files to see if the path is correct
-        try:
-            print("\ndebug: Checking files in explicit path...")
-            files = con.execute(f"SELECT * FROM glob('{table_path}/**')").fetchall()
-            if files:
-                print(f"Found {len(files)} files/objects in path.")
-            else:
-                print("Path appears empty or inaccessible.")
-        except:
-            pass
 
 if __name__ == "__main__":
     read_data()
