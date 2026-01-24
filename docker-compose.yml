@@ -49,12 +49,10 @@ services:
     environment:
       SERVICE_NAME: metastore
       DB_DRIVER: postgres
-      HIVE_SITE_CONF_javax_jdo_option_ConnectionDriverName: org.postgresql.Driver
-      HIVE_SITE_CONF_javax_jdo_option_ConnectionURL: jdbc:postgresql://postgres:5432/metastore
-      HIVE_SITE_CONF_javax_jdo_option_ConnectionUserName: hive
-      HIVE_SITE_CONF_javax_jdo_option_ConnectionPassword: password
     ports:
       - "9083:9083"
+    volumes:
+      - ./hive-config/hive-site.xml:/opt/hive/conf/hive-site.xml
     depends_on:
       - postgres
     command: /opt/hive/bin/hive --service metastore
