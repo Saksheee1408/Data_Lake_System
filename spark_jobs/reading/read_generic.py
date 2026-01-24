@@ -1,7 +1,14 @@
 import argparse
 import sys
+import os
 
-# Ensure /app is in the path
+# Add the project root directory to sys.path
+script_dir = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.dirname(os.path.dirname(script_dir))
+if project_root not in sys.path:
+    sys.path.append(project_root)
+
+# Helper for Docker execution
 if "/app" not in sys.path:
     sys.path.append("/app")
 
