@@ -5,9 +5,21 @@ import os
 # Add the project root directory to sys.path
 # This allows imports like 'from spark_jobs...' to work regardless of where the script is run from
 script_dir = os.path.dirname(os.path.abspath(__file__))
-project_root = os.path.dirname(os.path.dirname(script_dir))
-if project_root not in sys.path:
-    sys.path.append(project_root)
+project_root = os.path.dirname(os.path.dirname(os.path.dirname(script_dir)))
+# Fix: The logic above for project_root might be wrong depending on nesting.
+# ingest_csv.py is in spark_jobs/ingestion (2 levels deep from spark_jobs, 3 from root)
+# Let's simple use relative path logic safer.
+# d:\DataLake2\spark_jobs\ingestion\ingest_csv.py
+# dirname -> ingestion
+# dirname -> spark_jobs
+# dirname -> DataLake2
+
+current_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.dirname(current_dir) # spark_jobs
+grandparent_dir = os.path.dirname(parent_dir) # DataLake2
+
+if grandparent_dir not in sys.path:
+    sys.path.append(grandparent_dir)
 
 # Helper for Docker execution
 if "/app" not in sys.path:
@@ -39,7 +51,7 @@ def ingest_csv(file_path, table_name, mode="append"):
         if spark.catalog.tableExists(table_name):
             print(f"Table {table_name} exists.")
             if mode == "overwrite":
-                 df.writeTo(table_name).overwritePartitions() # or replace()
+                 df.writeTo(table_name).overwritePartitions() 
             else:
                  df.writeTo(table_name).append()
         else:
@@ -50,7 +62,7 @@ def ingest_csv(file_path, table_name, mode="append"):
         
     except Exception as e:
         print(f"[FAILED] Ingestion failed: {e}")
-        # raise e # Optionally raise to fail the job
+        # raise e 
         
     finally:
         spark.stop()
@@ -62,9 +74,5 @@ if __name__ == "__main__":
     parser.add_argument("--mode", default="append", choices=["append", "overwrite"], help="Write mode")
     
     args = parser.parse_args()
-    
-    # Resolve absolute path if needed, though Spark might handle relative paths differently depending on context.
-    # We'll pass the path as is, assuming user provides a valid path for Spark.
-    # If running in Docker, paths might need mapping.
     
     ingest_csv(args.file, args.table, args.mode)

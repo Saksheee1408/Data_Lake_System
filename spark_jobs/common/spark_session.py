@@ -14,7 +14,6 @@ def create_spark_session(app_name):
     print(f"Initializing Spark Session: {app_name}...")
     return SparkSession.builder \
         .appName(app_name) \
-        .config("spark.jars.packages", "org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.4.3,org.apache.hadoop:hadoop-aws:3.3.4") \
         .config("spark.sql.extensions", "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions") \
         .config("spark.sql.catalog.spark_catalog", "org.apache.iceberg.spark.SparkSessionCatalog") \
         .config("spark.sql.catalog.spark_catalog.type", "hive") \
@@ -27,4 +26,6 @@ def create_spark_session(app_name):
         .config("spark.hadoop.fs.s3a.path.style.access", "true") \
         .config("spark.hadoop.fs.s3a.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem") \
         .config("spark.hadoop.fs.s3a.connection.ssl.enabled", "false") \
+        .config("spark.hadoop.fs.s3a.connection.timeout", "5000") \
+        .config("spark.hadoop.fs.s3a.attempts.maximum", "1") \
         .getOrCreate()
