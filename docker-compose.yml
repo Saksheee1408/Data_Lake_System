@@ -49,6 +49,7 @@ services:
     environment:
       SERVICE_NAME: metastore
       DB_DRIVER: postgres
+      SKIP_SCHEMA_INIT: "true"
     ports:
       - "9083:9083"
     volumes:
