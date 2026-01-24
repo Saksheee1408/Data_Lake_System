@@ -4,4 +4,4 @@ pandas
 pyarrow
 pyiceberg[s3fs,sqlalchemy,duckdb]
 sqlalchemy
-pyspark
+pyspark==3.5.0
