@@ -58,6 +58,12 @@ def ingest_csv(file_path, table_name, record_key, partition_field=None, precombi
     print(f"Reading CSV from: {file_path}")
     # Read CSV
     df = spark.read.option("header", "true").option("inferSchema", "true").csv(file_path)
+    
+    # Sanitize column names for Avro compatibility (replace spaces with underscores, remove special chars)
+    new_columns = [c.strip().replace(" ", "_").replace(".", "").replace("/", "_").replace("(", "").replace(")", "") for c in df.columns]
+    df = df.toDF(*new_columns)
+    
+    print("Sanitized Schema:")
     df.printSchema()
     
     # Path in MinIO
