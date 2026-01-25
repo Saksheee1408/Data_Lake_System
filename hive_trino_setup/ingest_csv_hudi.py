@@ -63,17 +63,25 @@ def ingest_csv(file_path, table_name, record_key, partition_field=None, precombi
     new_columns = [c.strip().replace(" ", "_").replace(".", "").replace("/", "_").replace("(", "").replace(")", "") for c in df.columns]
     df = df.toDF(*new_columns)
     
+    # Add a current timestamp column for Hudi precombine
+    from pyspark.sql.functions import current_timestamp, lit
+    df = df.withColumn("current_ts", current_timestamp().cast("string"))
+
     print("Sanitized Schema:")
     df.printSchema()
     
     # Path in MinIO
     path = f"s3a://warehouse/{table_name}"
     
+    # Default precombine to current_ts if not provided
+    actual_precombine = precombine_field if precombine_field else "current_ts"
+    
     hudi_options = {
         'hoodie.table.name': table_name,
         'hoodie.datasource.write.table.type': 'COPY_ON_WRITE',
         'hoodie.datasource.write.operation': 'upsert',
         'hoodie.datasource.write.recordkey.field': record_key,
+        'hoodie.datasource.write.precombine.field': actual_precombine,
         
         "hoodie.enable.data.skipping": "true",
         "hoodie.metadata.enable": "true",
@@ -93,12 +101,9 @@ def ingest_csv(file_path, table_name, record_key, partition_field=None, precombi
         hudi_options["hoodie.datasource.hive_sync.partition_extractor_class"] = "org.apache.hudi.hive.NonPartitionedExtractor"
         hudi_options["hoodie.datasource.write.keygenerator.class"] = "org.apache.hudi.keygen.NonpartitionedKeyGenerator"
 
-    if precombine_field:
-        hudi_options['hoodie.datasource.write.precombine.field'] = precombine_field
-    else:
-        # If no precombine field is provided, we can leave it unset or use a default logic roughly
-        # usually Hudi needs one for upserts. 
-        print("WARNING: No precombine field provided. Upserts might behave unexpectedly if duplicates exist.")
+    # Precombine is already set above
+    # if precombine_field:
+    #     hudi_options['hoodie.datasource.write.precombine.field'] = precombine_field
 
     print(f"\nWriting to {path}...")
     
