@@ -1,6 +1,7 @@
 import os
 import sys
 import uuid
+import pyspark
 from pyspark.sql import SparkSession
 from faker import Faker
 from datetime import datetime
@@ -8,11 +9,29 @@ from pyspark.sql.types import StructType, StructField, StringType
 
 print("Imports loaded ")
 
-HUDI_VERSION = '1.0.0-beta1'
-SPARK_VERSION = '3.4'
+# Auto-detect Spark version to select correct Hudi bundle
+spark_version = pyspark.__version__
+major_minor = ".".join(spark_version.split(".")[:2])
+print(f"Detected PySpark Version: {spark_version}")
+
+if major_minor == '3.5':
+    HUDI_VERSION = '0.15.0'
+    SPARK_BUNDLE_VERSION = '3.5'
+elif major_minor == '3.4':
+    HUDI_VERSION = '0.14.0'
+    SPARK_BUNDLE_VERSION = '3.4'
+elif major_minor == '3.3':
+    HUDI_VERSION = '0.14.0'
+    SPARK_BUNDLE_VERSION = '3.3'
+else:
+    print(f"WARNING: Untested Spark version {spark_version}. Defaulting to configuration for 3.4")
+    HUDI_VERSION = '0.14.0'
+    SPARK_BUNDLE_VERSION = '3.4'
+
+print(f"Using Hudi Version: {HUDI_VERSION} for Spark Bundle: {SPARK_BUNDLE_VERSION}")
 
 # os.environ["JAVA_HOME"] = "/opt/homebrew/opt/openjdk@11" # User likely has this set or doesn't need it if running in same env as before
-SUBMIT_ARGS = f"--packages org.apache.hadoop:hadoop-aws:3.3.4,org.apache.hudi:hudi-spark{SPARK_VERSION}-bundle_2.12:{HUDI_VERSION} pyspark-shell"
+SUBMIT_ARGS = f"--packages org.apache.hadoop:hadoop-aws:3.3.4,org.apache.hudi:hudi-spark{SPARK_BUNDLE_VERSION}-bundle_2.12:{HUDI_VERSION} pyspark-shell"
 os.environ["PYSPARK_SUBMIT_ARGS"] = SUBMIT_ARGS
 os.environ['PYSPARK_PYTHON'] = sys.executable
 
