@@ -41,7 +41,7 @@ def get_catalog():
     return load_catalog("default", **{
         "type": "sql",
         "uri": f"sqlite:///{catalog_db_path}",
-        "s3.endpoint": "http://localhost:9000",
+        "s3.endpoint": "http://localhost:9002",
         "s3.access-key-id": "minioadmin",
         "s3.secret-access-key": "minioadmin",
         "s3.region": "us-east-1",
@@ -53,7 +53,7 @@ def get_duckdb_connection():
     con = duckdb.connect(database=':memory:')
     con.execute("INSTALL httpfs; LOAD httpfs;")
     con.execute("INSTALL iceberg; LOAD iceberg;") 
-    con.execute("SET s3_endpoint='localhost:9000';")
+    con.execute("SET s3_endpoint='localhost:9002';")
     con.execute("SET s3_access_key_id='minioadmin';")
     con.execute("SET s3_secret_access_key='minioadmin';")
     con.execute("SET s3_use_ssl=false;")
