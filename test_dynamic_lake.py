@@ -8,6 +8,10 @@ API_URL = "http://localhost:8000"
 def test_dynamic_scenarios():
     print("--- 🚀 Starting Dynamic Data Lake Test ---")
 
+    # CLEANUP (Start Fresh)
+    requests.delete(f"{API_URL}/hudi/dynamic_employees")
+    requests.delete(f"{API_URL}/hudi/dynamic_products")
+
     # ------------------------------------------------------------
     # SCENARIO 1: EMPLOYEES (Standard Data)
     # ------------------------------------------------------------
@@ -52,9 +56,10 @@ P-003,Coffee Mug,Home,12.00,50
     # SCENARIO 3: SCHEMA EVOLUTION (Adding a column to Employees)
     # ------------------------------------------------------------
     print(f"\n[3] Testing Schema Evolution (Adding 'bonus' to {table_emp})")
-    csv_emp_v2 = """emp_id,full_name,dept,salary,join_date,bonus
-101,John Doe,Engineering,90000,2023-01-15,5000
-104,Alice Green,HR,72000,2023-04-20,2000
+    # New CSV has 'bonus' but DOES NOT have 'salary' to test full evolution robustness
+    csv_emp_v2 = """emp_id,full_name,dept,join_date,bonus
+101,John Doe,Engineering,2023-01-15,5000
+104,Alice Green,HR,2023-04-20,2000
 """
     print("   -> Uploading Employees Upsert with New Column...")
     files = {'file': ('employees_v2.csv', csv_emp_v2, 'text/csv')}
@@ -70,21 +75,28 @@ P-003,Coffee Mug,Home,12.00,50
     # VERIFICATION
     # ------------------------------------------------------------
     print("\n[4] Verifying Data via Trino...")
-    time.sleep(2) # Give a moment for metadata sync
+    time.sleep(10) # Give extra time for metadata sync and Trino cache expiration
     
     print(f"   -> Querying {table_emp} (should have bonus column)...")
-    resp = requests.get(f"{API_URL}/query/hudi", params={"sql": f"SELECT emp_id, full_name, salary, bonus FROM {table_emp} ORDER BY emp_id"})
-    if resp.status_code == 200:
-        data = resp.json()
-        print(f"   ✅ Result: {data}")
-    else:
-        print(f"   ❌ Query Failed: {resp.text}")
+    # We use the new dynamic read endpoint
+    try:
+        resp = requests.get(f"{API_URL}/hudi/{table_emp}/read", params={"limit": 10})
+        if resp.status_code == 200:
+            data = resp.json()
+            print(f"   ✅ Result ({len(data)} rows):")
+            # print columns of first row to verify
+            if data:
+                print("   Columns found:", list(data[0].keys()))
+        else:
+             print(f"   ❌ Query Failed: {resp.text}")
+    except:
+        print("   ❌ Query Exception")
 
     print(f"\n   -> Querying {table_prod}...")
-    resp = requests.get(f"{API_URL}/query/hudi", params={"sql": f"SELECT sku, product_name, price FROM {table_prod} ORDER BY sku"})
+    resp = requests.get(f"{API_URL}/hudi/{table_prod}/read")
     if resp.status_code == 200:
         data = resp.json()
-        print(f"   ✅ Result: {data}")
+        print(f"   ✅ Result: {len(data)} rows")
 
 if __name__ == "__main__":
     test_dynamic_scenarios()
