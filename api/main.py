@@ -117,7 +117,12 @@ async def ingest_hudi_table(
     precombine: str = Form(None)
 ):
     """
-    Ingest data into Hudi table using the existing ingest_csv_hudi.py script.
+    Ingest ANY CSV data into a Hudi table dynamically.
+    - table: Name of the target table (will be created if not exists).
+    - pkey: Column name to use as the Primary Key (must exist in CSV).
+    - file: The CSV file to ingest.
+    - partition: (Optional) Column name to partition by.
+    - precombine: (Optional) Column for de-duplication (e.g., timestamp). Defaults to ingestion time.
     """
     try:
         # Define paths
