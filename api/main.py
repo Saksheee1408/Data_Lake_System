@@ -40,14 +40,14 @@ def get_catalog():
     print(f"DEBUG: Catalog Path: {catalog_db_path}")
 
     return load_catalog("default", **{
-        "type": "sql",
-        "uri": f"sqlite:///{catalog_db_path}",
+        "type": "hive",
+        "uri": "thrift://localhost:9084",
         "s3.endpoint": "http://127.0.0.1:9002",
-        "s3.access-key-id": "minioadmin",
+        "s3.access-key-id": "minioadmin", # MinIO credentials
         "s3.secret-access-key": "minioadmin",
         "s3.region": "us-east-1",
         "s3.path-style-access": "true",
-        "warehouse": "s3://warehouse",
+        "warehouse": "s3a://warehouse", # Use s3a scheme for consistency with Spark/Hive
     })
 
 def get_duckdb_connection():
