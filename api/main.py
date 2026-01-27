@@ -111,18 +111,16 @@ def health_check():
 @app.post("/ingest/hudi")
 async def ingest_hudi_table(
     table: str = Form(...),
-    pkey: str = Form(...),
+    pkey: str = Form(None), # Made optional
     file: UploadFile = File(...),
     partition: str = Form(None),
     precombine: str = Form(None)
 ):
     """
     Ingest ANY CSV data into a Hudi table dynamically.
-    - table: Name of the target table (will be created if not exists).
-    - pkey: Column name to use as the Primary Key (must exist in CSV).
-    - file: The CSV file to ingest.
-    - partition: (Optional) Column name to partition by.
-    - precombine: (Optional) Column for de-duplication (e.g., timestamp). Defaults to ingestion time.
+    - table: Name of the target table.
+    - pkey: (Optional) Auto-detected if not provided (looks for 'id', or uses first column).
+    - file: The CSV file.
     """
     try:
         # Define paths
@@ -138,11 +136,25 @@ async def ingest_hudi_table(
         temp_filename = f"{uuid.uuid4()}{file_ext}"
         temp_file_path = os.path.join(temp_dir, temp_filename)
         
-        print(f"DEBUG: Saving upload to {temp_file_path}")
-        
         with open(temp_file_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
             
+        # --- AUTO DETECT PKEY IF MISSING ---
+        if not pkey:
+            # Read just the header to find columns
+            df_iter = pd.read_csv(temp_file_path, nrows=1)
+            cols = list(df_iter.columns)
+            
+            # Heuristic 1: Look for exact 'id' or 'ID'
+            candidates = [c for c in cols if c.lower() in ['id', 'uuid', 'key', 'pk']]
+            if candidates:
+                pkey = candidates[0]
+            else:
+                # Heuristic 2: Use the first column
+                pkey = cols[0]
+            
+            print(f"DEBUG: Auto-detected Primary Key: {pkey}")
+
         # Construct command
         command = [
             sys.executable,
