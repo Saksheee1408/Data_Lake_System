@@ -42,10 +42,11 @@ def get_catalog():
     return load_catalog("default", **{
         "type": "sql",
         "uri": f"sqlite:///{catalog_db_path}",
-        "s3.endpoint": "http://localhost:9002",
+        "s3.endpoint": "http://127.0.0.1:9002",
         "s3.access-key-id": "minioadmin",
         "s3.secret-access-key": "minioadmin",
         "s3.region": "us-east-1",
+        "s3.path-style-access": "true",
         "warehouse": "s3://warehouse",
     })
 
