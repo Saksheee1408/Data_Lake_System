@@ -23,7 +23,7 @@ if grandparent_dir not in sys.path:
 
 # Helper for Docker execution
 if "/app" not in sys.path:
-    sys.path.append("/app")
+    sys.path.append("/app") 
 
 from pyspark.sql import SparkSession
 

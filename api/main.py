@@ -1,5 +1,8 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, HTTPException, Form
 from fastapi.middleware.cors import CORSMiddleware
+import subprocess
+import shutil
+import uuid
 import pandas as pd
 import pyarrow as pa
 from pyiceberg.catalog import load_catalog
@@ -200,6 +203,83 @@ def run_query(sql: str = "SELECT * FROM sales"):
     except Exception as e:
          print(f"Query Error: {e}")
          raise HTTPException(status_code=400, detail=str(e))
+
+@app.post("/ingest/hudi")
+async def ingest_hudi_table(
+    table: str = Form(...),
+    pkey: str = Form(...),
+    file: UploadFile = File(...),
+    partition: str = Form(None),
+    precombine: str = Form(None)
+):
+    """
+    Ingest data into Hudi table using the existing ingest_csv_hudi.py script.
+    """
+    try:
+        # Define paths
+        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        script_path = os.path.join(base_dir, "hive_trino_setup", "ingest_csv_hudi.py")
+        temp_dir = os.path.join(base_dir, "temp_uploads")
+        
+        # Ensure temp directory exists
+        os.makedirs(temp_dir, exist_ok=True)
+        
+        # Save uploaded file
+        file_ext = os.path.splitext(file.filename)[1]
+        temp_filename = f"{uuid.uuid4()}{file_ext}"
+        temp_file_path = os.path.join(temp_dir, temp_filename)
+        
+        print(f"DEBUG: Saving upload to {temp_file_path}")
+        
+        with open(temp_file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+            
+        # Construct command
+        command = [
+            sys.executable,
+            script_path,
+            "--file", temp_file_path,
+            "--table", table,
+            "--pkey", pkey
+        ]
+        
+        if partition:
+            command.extend(["--partition", partition])
+            
+        if precombine:
+            command.extend(["--precombine", precombine])
+            
+        print(f"DEBUG: Running command: {' '.join(command)}")
+        
+        # Run script
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            cwd=base_dir # Run from project root so relative paths in script might work if any (though we use absolute for script)
+        )
+        
+        # Clean up temp file
+        if os.path.exists(temp_file_path):
+            os.remove(temp_file_path)
+            
+        if result.returncode != 0:
+            print(f"Script Error Output:\n{result.stderr}")
+            raise HTTPException(status_code=500, detail=f"Ingestion script failed: {result.stderr}")
+            
+        return {
+            "status": "success",
+            "message": "Hudi ingestion complete",
+            "output": result.stdout
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"API Error: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
     import uvicorn
