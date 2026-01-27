@@ -82,6 +82,7 @@ def ingest_csv(file_path, table_name, record_key, partition_field=None, precombi
         'hoodie.datasource.write.operation': 'upsert',
         'hoodie.datasource.write.recordkey.field': record_key,
         'hoodie.datasource.write.precombine.field': actual_precombine,
+        'hoodie.datasource.write.reconcile.schema': 'true',
         
         "hoodie.enable.data.skipping": "false",
         "hoodie.metadata.enable": "false",
