@@ -218,6 +218,14 @@ async def ingest_table_dynamic(table_name: str, file: UploadFile = File(...)):
         catalog = get_catalog()
         full_table_name = f"default.{table_name}"
         
+        # Ensure default namespace exists (critical for fresh catalog)
+        try:
+            catalog.create_namespace("default")
+            print("Created 'default' namespace.")
+        except Exception:
+             # Already exists
+             pass
+        
         try:
             # Try loading the table
             table = catalog.load_table(full_table_name)
