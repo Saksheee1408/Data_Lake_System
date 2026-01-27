@@ -16,6 +16,7 @@ import duckdb
 import io
 import sys
 import os
+import trino
 
 # Add parent dir to path so we can import db_connection if needed
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -280,6 +281,92 @@ async def ingest_hudi_table(
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/delete/hudi")
+async def delete_hudi_records(
+    table: str = Form(...),
+    pkey: str = Form(...),
+    ids: str = Form(...)
+):
+    """
+    Delete records from a Hudi table.
+    ids: Comma-separated list of primary keys to delete.
+    """
+    print(f"Request to delete IDs {ids} from {table}")
+    try:
+         # Define paths
+        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        
+        # We need the delete script which I just created
+        script_path = os.path.join(base_dir, "hive_trino_setup", "delete_hudi.py")
+        
+        if not os.path.exists(script_path):
+            raise HTTPException(status_code=500, detail="Delete script not found on server")
+
+        command = [
+            sys.executable,
+            script_path,
+            "--table", table,
+            "--pkey", pkey,
+            "--ids", ids
+        ]
+        
+        print(f"DEBUG: Running delete command: {' '.join(command)}")
+        
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            cwd=base_dir
+        )
+        
+        if result.returncode != 0:
+            print(f"Delete Script Error:\n{result.stderr}")
+            raise HTTPException(status_code=500, detail=f"Delete failed: {result.stderr}")
+            
+        return {
+            "status": "success",
+            "message": f"Successfully processed delete request for {table}",
+            "output": result.stdout
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Delete API Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/query/hudi")
+def query_hudi_trino(sql: str):
+    """
+    Query Hudi tables using Trino.
+    This is the preferred way to read Hudi data in this stack.
+    """
+    print(f"Executing Trino SQL: {sql}")
+    try:
+        conn = trino.dbapi.connect(
+            host='localhost',
+            port=8082,
+            user='admin',
+            catalog='hudi',
+            schema='default'
+        )
+        cur = conn.cursor()
+        cur.execute(sql)
+        rows = cur.fetchall()
+        
+        # Get column names
+        columns = [desc[0] for desc in cur.description]
+        
+        # Convert to list of dicts
+        result = [dict(zip(columns, row)) for row in rows]
+        
+        return result
+        
+    except Exception as e:
+        print(f"Trino Query Error: {e}")
+        # If Trino module is missing or connection fails
+        raise HTTPException(status_code=500, detail=f"Trino Error: {str(e)}")
 
 if __name__ == "__main__":
     import uvicorn
