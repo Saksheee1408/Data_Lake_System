@@ -64,6 +64,7 @@ def ingest_csv(file_path, table_name, record_key, partition_field=None, precombi
     df = df.toDF(*new_columns)
     
     # Add a current timestamp column for Hudi precombine
+    # Add a current timestamp column for Hudi precombine
     from pyspark.sql.functions import current_timestamp, lit
     df = df.withColumn("current_ts", current_timestamp().cast("string"))
 
@@ -107,6 +108,42 @@ def ingest_csv(file_path, table_name, record_key, partition_field=None, precombi
     # Precombine is already set above
     # if precombine_field:
     #     hudi_options['hoodie.datasource.write.precombine.field'] = precombine_field
+
+    # --- SCHEMA EVOLUTION HANDLING ---
+    # To fix 'incompatible columns' error, we must insure the dataframe we write includes ALL columns 
+    # that ever existed in the table, setting nulls for missing ones.
+    
+    try:
+        # Check if table already exists in Hudi/Spark
+        # We can try reading a single record to get the schema
+        existing_df = spark.read.format("hudi").load(path)
+        existing_schema = existing_df.schema
+        
+        print("Existing Table Schema Found. Merging schemas...")
+        
+        # Add missing columns from existing table to new dataframe (set as null)
+        for field in existing_schema.fields:
+            if field.name not in df.columns:
+                print(f"Adding missing column from history: {field.name}")
+                df = df.withColumn(field.name, lit(None).cast(field.dataType))
+                
+        # Add missing columns from new dataframe to existing schema (logic handled by 'mergeSchema' option usually, 
+        # but explicit cast helps).
+        
+        # Align columns order
+        # We prefer the new schema's order but ensuring all old columns are present
+        # Actually, for Hudi append, it's safer to select columns in the order of the existing schema + new ones at end
+        
+        # Union list of columns
+        all_cols = existing_df.columns + [c for c in df.columns if c not in existing_df.columns]
+        
+        # Select with casting to ensure types match existing if possible (simple cast)
+        # For now just select by name to align order
+        df = df.select(*all_cols)
+        
+    except Exception as e:
+        # Table likely doesn't exist yet, which is fine
+        print(f"No existing table found (or error reading it): {e}. Proceeding with new schema.")
 
     print(f"\nWriting to {path}...")
     
