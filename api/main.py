@@ -216,14 +216,17 @@ async def ingest_table_dynamic(table_name: str, file: UploadFile = File(...)):
         
         # Get Catalog
         catalog = get_catalog()
-        full_table_name = f"default.{table_name}"
         
-        # Ensure default namespace exists (critical for fresh catalog)
+        # Use a custom namespace to ensure we control the S3 location
+        # (Hive default might point to non-existent buckets)
+        namespace = "iceberg"
+        full_table_name = f"{namespace}.{table_name}"
+        
+        # Ensure namespace exists with correct location
         try:
-            catalog.create_namespace("default")
-            print("Created 'default' namespace.")
+            catalog.create_namespace(namespace, properties={"location": "s3a://warehouse/iceberg"})
+            print(f"Created '{namespace}' namespace.")
         except Exception:
-             # Already exists
              pass
         
         try:
@@ -245,7 +248,8 @@ async def ingest_table_dynamic(table_name: str, file: UploadFile = File(...)):
             
             table = catalog.create_table(
                 identifier=full_table_name,
-                schema=iceberg_schema
+                schema=iceberg_schema,
+                location=f"s3a://warehouse/iceberg/{table_name}" # Explicit location
             )
             table.append(pa_table)
             action = "created"
