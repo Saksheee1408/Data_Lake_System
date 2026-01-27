@@ -375,6 +375,108 @@ def query_hudi_trino(sql: str):
         # If Trino module is missing or connection fails
         raise HTTPException(status_code=500, detail=f"Trino Error: {str(e)}")
 
+@app.get("/hudi/{table}/schema")
+def get_hudi_table_schema(table: str):
+    """
+    Get the schema (columns and types) of a Hudi table dynamically.
+    """
+    try:
+        conn = trino.dbapi.connect(
+            host='localhost',
+            port=8082,
+            user='admin',
+            catalog='hudi',
+            schema='default'
+        )
+        cur = conn.cursor()
+        cur.execute(f"DESCRIBE {table}")
+        rows = cur.fetchall()
+        
+        # rows are (Column, Type, Extra, Comment)
+        schema = [{"column": r[0], "type": r[1]} for r in rows]
+        return {"table": table, "schema": schema}
+        
+    except Exception as e:
+        print(f"Schema Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/hudi/{table}/read")
+def read_hudi_table_dynamic(
+    table: str, 
+    columns: str = "*", 
+    limit: int = 100, 
+    filter_col: str = None, 
+    filter_val: str = None
+):
+    """
+    Read data from Hudi table using simple parameters.
+    - columns: Comma-separated list of columns to fetch (default: all).
+    - filter_col: Column name to filter by (equality check).
+    - filter_val: Value to match.
+    """
+    try:
+        # Sanitize columns to prevent injection
+        if columns != "*":
+            # precise splitting
+            cols = [c.strip() for c in columns.split(",")]
+            # simple validation
+            safe_cols = ", ".join([f'"{c}"' for c in cols])
+        else:
+            safe_cols = "*"
+
+        sql = f"SELECT {safe_cols} FROM {table}"
+        
+        if filter_col and filter_val:
+            # Handle numeric vs string value for SQL
+            # For simplicity, we'll try to guess or just use single quotes which works for strings and usually casting for numbers in Trino
+            sql += f" WHERE {filter_col} = '{filter_val}'"
+            
+        sql += f" LIMIT {limit}"
+        
+        print(f"Generated SQL: {sql}")
+        
+        conn = trino.dbapi.connect(
+            host='localhost',
+            port=8082,
+            user='admin',
+            catalog='hudi',
+            schema='default'
+        )
+        cur = conn.cursor()
+        cur.execute(sql)
+        rows = cur.fetchall()
+        columns_desc = [desc[0] for desc in cur.description]
+        result = [dict(zip(columns_desc, row)) for row in rows]
+        
+        return result
+        
+    except Exception as e:
+        print(f"Read Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/hudi/{table}")
+def drop_hudi_table(table: str):
+    """
+    Drop a Hudi table completely.
+    """
+    try:
+        conn = trino.dbapi.connect(
+            host='localhost',
+            port=8082,
+            user='admin',
+            catalog='hudi',
+            schema='default'
+        )
+        cur = conn.cursor()
+        # Trino DROP TABLE
+        cur.execute(f"DROP TABLE IF EXISTS {table}")
+        
+        return {"status": "success", "message": f"Table {table} dropped."}
+        
+    except Exception as e:
+        print(f"Drop Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
