@@ -65,6 +65,18 @@ def read(args):
     if args.limit:
         params['limit'] = args.limit
         
+    # Support "col=val" filtering
+    if args.where:
+        try:
+            if '=' in args.where:
+                col, val = args.where.split('=', 1)
+                params['filter_col'] = col.strip()
+                params['filter_val'] = val.strip()
+            else:
+                print("⚠️  Warning: --where argument must be in 'col=val' format. Ignoring.")
+        except Exception as e:
+            print(f"⚠️  Error parsing filter: {e}")
+        
     try:
         resp = requests.get(f"{API_URL}/hudi/{args.table}/read", params=params)
         if resp.status_code == 200:
@@ -110,6 +122,7 @@ def main():
     p_read.add_argument("table", help="Table Name")
     p_read.add_argument("--columns", help="Columns to select (comma-separated)", default="*")
     p_read.add_argument("--limit", help="Max rows to return", default=100)
+    p_read.add_argument("--where", help="Filter condition (e.g. 'col=val')")
 
     # DELETE Command
     p_delete = subparsers.add_parser("delete", help="Delete records")
