@@ -40,7 +40,8 @@ def test_iceberg():
 
     # 3. Query Current State
     print(f"\n[3] Querying Current State...")
-    resp = requests.get(f"{API_URL}/query", params={"sql": f"SELECT * FROM {table_name}"})
+    # Use Trino explicitly for Iceberg
+    resp = requests.get(f"{API_URL}/query/trino", params={"sql": f"SELECT * FROM {table_name}", "catalog": "iceberg"})
     if resp.status_code == 200:
         print(f"   ✅ Rows: {len(resp.json())}")
         print(json.dumps(resp.json(), indent=2))

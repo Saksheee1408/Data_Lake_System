@@ -358,16 +358,23 @@ async def delete_hudi_records(
 @app.get("/query/hudi")
 def query_hudi_trino(sql: str):
     """
-    Query Hudi tables using Trino.
-    This is the preferred way to read Hudi data in this stack.
+    Legacy endpoint for Hudi. Redirects to new generic Trino endpoint.
     """
-    print(f"Executing Trino SQL: {sql}")
+    return query_trino_generic(sql, catalog='hudi')
+
+@app.get("/query/trino")
+def query_trino_generic(sql: str, catalog: str = 'iceberg'):
+    """
+    Execute SQL query using Trino.
+    - catalog: 'hudi' or 'iceberg' (default)
+    """
+    print(f"Executing Trino SQL [{catalog}]: {sql}")
     try:
         conn = trino.dbapi.connect(
             host='localhost',
             port=8082,
             user='admin',
-            catalog='hudi',
+            catalog=catalog,
             schema='default'
         )
         cur = conn.cursor()
@@ -375,17 +382,17 @@ def query_hudi_trino(sql: str):
         rows = cur.fetchall()
         
         # Get column names
-        columns = [desc[0] for desc in cur.description]
-        
-        # Convert to list of dicts
-        result = [dict(zip(columns, row)) for row in rows]
-        
+        if cur.description:
+            columns = [desc[0] for desc in cur.description]
+            result = [dict(zip(columns, row)) for row in rows]
+        else:
+            result = {"message": "Query executed successfully (no results)"}
+            
         return result
         
     except Exception as e:
         print(f"Trino Query Error: {e}")
-        # If Trino module is missing or connection fails
-        raise HTTPException(status_code=500, detail=f"Trino Error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/hudi/{table}/schema")
 def get_hudi_table_schema(table: str):
