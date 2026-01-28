@@ -8,7 +8,7 @@ A lightweight, local Data Lakehouse implementation demonstrating ACID transactio
 |-----------|------------|------|
 | **Storage** | **MinIO** | S3-compatible Object Storage (runs in Docker). |
 | **Table Format** | **Apache Iceberg** | Provides ACID transactions, Schema Evolution, and Time Travel. |
-| **Query Engine** | **DuckDB** | Fast analytical SQL engine to read/write data. |
+| **Query Engine** | **DuckDB & Trino** | DuckDB for local analytics, Trino for distributed SQL. |
 | **API Layer** | **FastAPI** | REST API for Ingestion and Querying. |
 
 ## 🚀 Prerequisites
@@ -41,18 +41,15 @@ Create the `warehouse` bucket:
 python setup_infra.py
 ```
 
-## 🏃 Usage: Scripts (CLI)
+## 🏃 Usage: CLI Tool (`lake_cli.py`)
 
-Run these scripts in order to verify core Lakehouse functionality.
+A unified CLI is provided to interact with the Lakehouse API.
 
-| Step | Script | Description |
-|------|--------|-------------|
-| 1 | `python create_table.py` | Creates `default.sales` Iceberg table. |
-| 2 | `python ingest_data.py` | Inserts sample records (Phase 1 data). |
-| 3 | `python read_data.py` | Reads data using DuckDB. |
-| 4 | `python update_data.py` | Performs a Copy-on-Write UPDATE. |
-| 5 | `python schema_evolve.py` | Adds a `channel` column and inserts new data. |
-| 6 | `python time_travel.py` | Queries historical snapshots (Time Travel). |
+| Command | Usage | Description |
+|---------|-------|-------------|
+| **Ingest** | `python lake_cli.py ingest data/leads-100.csv sales` | Uploads CSV to `sales` table. |
+| **Read** | `python lake_cli.py read sales --limit 10` | Queries the table using the API. |
+| **Delete** | `python lake_cli.py delete sales 1,2,3 id` | Deletes rows by ID. |
 
 ## 🌐 Usage: Backend API
 
@@ -68,7 +65,7 @@ uvicorn main:app --reload --host 0.0.0.0 --port 8000
 ### 2. Test the API End-to-End
 Open a new terminal (keep uvicorn running) and run the automated test:
 ```bash
-python test_api.py
+python tests/test_api.py
 ```
 This script will:
 1.  Generate a test CSV.
@@ -81,20 +78,17 @@ This script will:
 ├── api/
 │   ├── main.py              # FastAPI Application
 │   └── requirements.txt     # API Dependencies
-├── docker-compose.yml       # MinIO Service Definition
-├── setup_infra.py           # MinIO Bucket Setup
+├── docker-compose.yml       # MinIO & Hive Metastore & Trino Services
+├── hive_trino_setup/        # Configuration for Hive/Trino
+├── spark_jobs/              # Spark Ingestion Scripts
+├── lake_cli.py              # CLI Tool for API
 ├── db_connection.py         # DuckDB Connection Helper
-├── create_table.py          # Iceberg DDL
-├── ingest_data.py           # Iceberg Write (Batch)
-├── read_data.py             # DuckDB Read
-├── update_data.py           # CoW Update Example
-├── schema_evolve.py         # Schema Evolution Example
-├── time_travel.py           # Time Travel Example
-├── test_api.py              # API Verification Script
-└── requirements.txt         # Core Dependencies
+├── tests/                   # Verification Scripts (test_api.py, etc.)
+├── requirements.txt         # Core Dependencies
+└── archive/                 # Legacy Scripts (create_table.py, etc.)
 ```
 
 ## 📝 Design Notes
-- **Catalog**: Uses a local SQLite database (`iceberg_catalog.db`) to track table state.
+- **Catalog**: Uses **Hive Metastore** to track table state, enabling Time Travel and Schema Evolution.
 - **Copy-on-Write**: Deletes and Updates rewrite data files to ensure atomicity (Iceberg V1/V2 spec).
 - **Concurrency**: DuckDB is embedded; for high concurrency, consider running it in read-only mode or using a catalog service like Nessie.
