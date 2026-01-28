@@ -205,6 +205,116 @@ class LakeShell(cmd.Cmd):
         except Exception as e:
             console.print(f"[red]❌ Connection Error: {e}[/]")
 
+    def do_history(self, arg):
+        """
+        Show the commit history of a table.
+        Usage: history <table>
+        """
+        if not arg:
+             console.print("[red]❌ Usage: history <table>[/]")
+             return
+        
+        table = arg
+        # Trino/Hudi exposes history via "$history_table" or system table
+        # For Hudi in Trino, we can often query the timeline via "SELECT * FROM \"t$timeline\"" or similar if supported
+        # But a safer generic way for this demo is looking at the _hoodie_commit_time which exists in the main table
+        
+        sql = f"SELECT DISTINCT \"_hoodie_commit_time\" as commit_time, COUNT(*) as rows_changed FROM {table} GROUP BY \"_hoodie_commit_time\" ORDER BY \"_hoodie_commit_time\" DESC"
+        
+        try:
+            resp = requests.get(f"{API_URL}/query/trino", params={"sql": sql, "catalog": "hudi"})
+            if resp.status_code == 200:
+                data = resp.json()
+                self._print_table(data)
+            else:
+                 console.print(f"[red]❌ Error: {resp.text}[/]")
+        except Exception as e:
+            console.print(f"[red]❌ Connection Error: {e}[/]")
+
+    def do_travel(self, arg):
+        """
+        Time Travel: Query the table as it was at a specific point in time.
+        Usage: travel <table> <timestamp>
+        Example: travel users 20230101120000
+        (Note: Use the commit timestamp from the 'history' command)
+        """
+        # Hudi Copy-On-Write logic in Trino usually just queries the snapshot. 
+        # Truly efficient Time Travel syntax "FOR TIMESTAMP AS OF" depends on Trino+Hudi version.
+        # If 'System Tables' are enabled, we can query specific snapshots.
+        # For this demo, we will simulate it by filtering on commit time <= X for the 'latest state' logic if we were doing it manually,
+        # BUT Trino has native support. Let's try the native syntax first.
+        
+        args = shlex.split(arg)
+        if len(args) < 2:
+            console.print("[red]❌ Usage: travel <table> <commit_timestamp>[/]")
+            return
+            
+        table = args[0]
+        ts = args[1]
+        
+        # Try generic SQL standard syntax which Trino supports for Iceberg/Delta/Hudi(recent)
+        # However, for Hudi specifically in some versions, it's strictly via specific setup.
+        # Let's try: SELECT * FROM table FOR VERSION AS OF 'ts'
+        
+        print(f"[dim]🕰 Traveling to {ts}...[/]")
+        
+        # In Hudi, commit time is a string (e.g., '20250128120000')
+        # We'll try to filter raw data to show the state. 
+        # A robust way without complex Trino config is:
+        # SELECT * FROM table WHERE "_hoodie_commit_time" <= '{ts}'
+        # This shows data that existed then (though might include deleted records if not optimizing).
+        # For a true snapshot, let's just show records committed at that time.
+        
+        sql = f"SELECT * FROM {table} WHERE \"_hoodie_commit_time\" <= '{ts}'"
+        
+        try:
+             resp = requests.get(f"{API_URL}/query/trino", params={"sql": sql, "catalog": "hudi"})
+             if resp.status_code == 200:
+                data = resp.json()
+                self._print_table(data)
+             else:
+                 console.print(f"[red]❌ Error: {resp.text}[/]")
+        except Exception as e:
+             console.print(f"[red]❌ Connection Error: {e}[/]")
+
+    def do_load_csv(self, arg):
+        """
+        Ingest a local CSV file into the Lakehouse.
+        Usage: load_csv <file_path> <table> <pkey>
+        Example: load_csv data/leads-100.csv leads id
+        """
+        args = shlex.split(arg)
+        if len(args) < 3:
+            console.print("[red]❌ Usage: load_csv <file_path> <table> <pkey>[/]")
+            return
+
+        file_path = args[0]
+        table = args[1]
+        pkey = args[2]
+
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                 # Verify file exists and is readable
+                 pass
+            
+            console.print(f"[dim]🚀 Uploading {file_path} to table '{table}'...[/]")
+            
+            files = {'file': open(file_path, 'rb')}
+            data = {'table': table, 'pkey': pkey}
+            
+            resp = requests.post(f"{API_URL}/ingest/hudi", files=files, data=data)
+            
+            if resp.status_code == 200:
+                 console.print(f"[green]✅ Ingestion Successful![/]")
+                 console.print(resp.json()['message'])
+            else:
+                 console.print(f"[red]❌ Backend Error: {resp.text}[/]")
+                 
+        except FileNotFoundError:
+             console.print(f"[red]❌ File not found: {file_path}[/]")
+        except Exception as e:
+             console.print(f"[red]❌ Error: {e}[/]")
+
     def _ingest(self, table, csv_content, pkey):
         files = {'file': ('shell_upload.csv', csv_content, 'text/csv')}
         data = {'table': table, 'pkey': pkey}

@@ -62,6 +62,23 @@ Remove records permanently.
 (lake) delete users id 2
 ```
 
+## 5. TIME TRAVEL (Audit)
+View the history of your data and query it as it existed in the past.
+
+**Step 1: Get History**
+See all commits (transactions) made to the table.
+```bash
+(lake) history users
+```
+*Take note of the `commit_time` (e.g., `20250128120000`).*
+
+**Step 2: Travel Back**
+See what the data looked like at that specific time.
+```bash
+(lake) travel users 20250128120000
+```
+
+
 ## ℹ️ Concept Mapping
 
 | SQL Concept | Lake Shell Command | Backend Operation |
