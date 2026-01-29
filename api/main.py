@@ -203,6 +203,85 @@ async def ingest_hudi_table(
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.post("/ingest/iceberg/spark")
+async def ingest_iceberg_spark(
+    table: str = Form(...),
+    file: UploadFile = File(...),
+    mode: str = Form("append")
+):
+    """
+    Ingest CSV data into an Iceberg table using Spark.
+    - table: Target table name (e.g. default.sales)
+    - file: The CSV file.
+    - mode: append or overwrite
+    """
+    print(f"Request to ingest into Iceberg table '{table}' using Spark")
+    try:
+        # Define paths
+        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        script_path = os.path.join(base_dir, "spark_jobs", "ingestion", "ingest_csv.py")
+        temp_dir = os.path.join(base_dir, "temp_uploads")
+        
+        # Ensure temp directory exists
+        os.makedirs(temp_dir, exist_ok=True)
+        
+        # Save uploaded file
+        file_ext = os.path.splitext(file.filename)[1]
+        temp_filename = f"spark_{uuid.uuid4()}{file_ext}"
+        temp_file_path = os.path.join(temp_dir, temp_filename)
+        
+        with open(temp_file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+            
+        # Construct command
+        command = [
+            sys.executable,
+            script_path,
+            "--file", temp_file_path,
+            "--table", table,
+            "--mode", mode
+        ]
+        
+        print(f"DEBUG: Running Spark command: {' '.join(command)}")
+        
+        # Run script
+        # Pass environment variables for S3 and Metastore
+        env = os.environ.copy()
+        env["S3_ENDPOINT"] = "http://localhost:9002" 
+        env["METASTORE_URI"] = "thrift://localhost:9084"
+        
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            cwd=base_dir,
+            env=env
+        )
+        
+        # Clean up temp file
+        if os.path.exists(temp_file_path):
+            os.remove(temp_file_path)
+            
+        if result.returncode != 0:
+            print(f"Spark Script Error Output:\n{result.stderr}")
+            # Include stdout too as it might have info
+            detail = f"Spark ingestion failed.\nSTDOUT: {result.stdout}\nSTDERR: {result.stderr}"
+            raise HTTPException(status_code=500, detail=detail)
+            
+        return {
+            "status": "success",
+            "message": "Iceberg Spark ingestion complete",
+            "output": result.stdout
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"API Error: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.post("/ingest/{table_name}")
 async def ingest_table_dynamic(table_name: str, file: UploadFile = File(...)):
     print(f"Receiving file for table: {table_name}")

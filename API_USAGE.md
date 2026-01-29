@@ -26,6 +26,30 @@ response = requests.post(url, files=files, data=data)
 print(response.json())
 ```
 
+```
+
+## 1.1 Ingest via Spark (Iceberg)
+To ingest data into an Iceberg table using Spark explicitly:
+- **Endpoint:** `POST /ingest/iceberg/spark`
+- **Parameters:**
+  - `table`: Name of the table (e.g., `default.sales`)
+  - `file`: The CSV file path
+  - `mode`: `append` (default) or `overwrite`
+
+```python
+import requests
+
+url = "http://localhost:8000/ingest/iceberg/spark"
+files = {'file': open('sales.csv', 'rb')}
+data = {
+    'table': 'default.sales',
+    'mode': 'append'
+}
+
+response = requests.post(url, files=files, data=data)
+print(response.json())
+```
+
 ## 2. Update (Modify Data)
 To update existing records, simply **ingest the same CSV** (or a new CSV containing just the rows to change) with the **same Primary Keys**. Hudi handles the "Upsert" automatically.
 

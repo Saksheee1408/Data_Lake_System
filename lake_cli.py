@@ -16,38 +16,45 @@ def ingest(args):
     files = {'file': open(args.file, 'rb')}
     data = {'table': args.table}
     
-    # Client-side Auto-detection of Primary Key
-    if args.pkey:
-        data['pkey'] = args.pkey
-    else:
-        try:
-            # Read first line to get header
-            with open(args.file, 'r', encoding='utf-8', errors='ignore') as f:
-                header = f.readline().strip()
-                # Basic CSV split (handles simple cases)
-                cols = [c.strip().strip('"') for c in header.split(',')]
-                
-                # Heuristic: verify we have columns
-                if cols:
-                    # Look for standard ID names
-                    candidates = [c for c in cols if c.lower() in ['id', 'uuid', 'guid', 'key', 'pk', 'emp_id', 'user_id', 'transaction_id']]
-                    # Check for _id suffix
-                    if not candidates:
-                        candidates = [c for c in cols if c.lower().endswith('_id')]
-                    
-                    # Selection
-                    if candidates:
-                        detected_pkey = candidates[0]
-                    else:
-                        detected_pkey = cols[0]
-                        
-                    print(f"ℹ️  Auto-detected Primary Key: '{detected_pkey}'")
-                    data['pkey'] = detected_pkey
-        except Exception as e:
-            print(f"⚠️  PKey Auto-detection warning: {e}")
+    
+    endpoint = f"{API_URL}/ingest/hudi" if args.format == "hudi" else f"{API_URL}/ingest/iceberg/spark"
     
     try:
-        resp = requests.post(f"{API_URL}/ingest/hudi", files=files, data=data)
+        if args.format == "hudi":
+            # Hudi requires pkey logic
+            # Client-side Auto-detection of Primary Key
+            if args.pkey:
+                data['pkey'] = args.pkey
+            else:
+                try:
+                    # Read first line to get header
+                    with open(args.file, 'r', encoding='utf-8', errors='ignore') as f:
+                        header = f.readline().strip()
+                        # Basic CSV split (handles simple cases)
+                        cols = [c.strip().strip('"') for c in header.split(',')]
+                        
+                        # Heuristic: verify we have columns
+                        if cols:
+                            # Look for standard ID names
+                            candidates = [c for c in cols if c.lower() in ['id', 'uuid', 'guid', 'key', 'pk', 'emp_id', 'user_id', 'transaction_id']]
+                            # Check for _id suffix
+                            if not candidates:
+                                candidates = [c for c in cols if c.lower().endswith('_id')]
+                            
+                            # Selection
+                            if candidates:
+                                detected_pkey = candidates[0]
+                            else:
+                                detected_pkey = cols[0]
+                                
+                            print(f"ℹ️  Auto-detected Primary Key: '{detected_pkey}'")
+                            data['pkey'] = detected_pkey
+                except Exception as e:
+                    print(f"⚠️  PKey Auto-detection warning: {e}")
+        
+        print(f"🚀 Sending request to {endpoint}...")
+        resp = requests.post(endpoint, files=files, data=data)
+        
         if resp.status_code == 200:
             print("✅ Success!")
             print(json.dumps(resp.json(), indent=2))
@@ -116,6 +123,7 @@ def main():
     p_ingest.add_argument("file", help="Path to CSV file")
     p_ingest.add_argument("table", help="Target Table Name")
     p_ingest.add_argument("--pkey", help="Primary Key (Optional, auto-detected if omitted)")
+    p_ingest.add_argument("--format", default="hudi", choices=["hudi", "iceberg"], help="Table format (hudi or iceberg)")
 
     # READ Command
     p_read = subparsers.add_parser("read", help="Read data from Data Lake")

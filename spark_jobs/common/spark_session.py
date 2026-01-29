@@ -11,8 +11,11 @@ def create_spark_session(app_name):
     """
     Creates a Spark Session configured for MinIO and Iceberg.
     """
-    s3_endpoint = os.environ.get("S3_ENDPOINT", "http://minio:9000")
+    s3_endpoint = os.environ.get("S3_ENDPOINT", "http://localhost:9002")
+    metastore_uri = os.environ.get("METASTORE_URI", "thrift://localhost:9084")
+    
     print(f"Using S3 Endpoint: {s3_endpoint}")
+    print(f"Using Metastore URI: {metastore_uri}")
 
     return SparkSession.builder \
         .appName(app_name) \
@@ -20,6 +23,7 @@ def create_spark_session(app_name):
         .config("spark.sql.extensions", "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions") \
         .config("spark.sql.catalog.spark_catalog", "org.apache.iceberg.spark.SparkSessionCatalog") \
         .config("spark.sql.catalog.spark_catalog.type", "hive") \
+        .config("spark.sql.catalog.spark_catalog.uri", metastore_uri) \
         .config("spark.sql.catalog.local", "org.apache.iceberg.spark.SparkCatalog") \
         .config("spark.sql.catalog.local.type", "hadoop") \
         .config("spark.sql.catalog.local.warehouse", "s3a://warehouse/iceberg_warehouse") \
