@@ -538,7 +538,7 @@ def read_table_dynamic(
         else:
             safe_cols = "*"
 
-        sql = f"SELECT {safe_cols} FROM {table}"
+        sql = f'SELECT {safe_cols} FROM "{table}"'
         
         if filter_col and filter_val:
             # Handle numeric vs string value for SQL
