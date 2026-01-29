@@ -84,8 +84,13 @@ def read(args):
         except Exception as e:
             print(f"⚠️  Error parsing filter: {e}")
         
+    
+    # Pass format as catalog
+    params['catalog'] = args.format
+
     try:
-        resp = requests.get(f"{API_URL}/hudi/{args.table}/read", params=params)
+        # Use new generic endpoint
+        resp = requests.get(f"{API_URL}/data/{args.table}/read", params=params)
         if resp.status_code == 200:
             data = resp.json()
             print(f"✅ Found {len(data)} rows:")
@@ -131,6 +136,7 @@ def main():
     p_read.add_argument("--columns", help="Columns to select (comma-separated)", default="*")
     p_read.add_argument("--limit", help="Max rows to return", default=100)
     p_read.add_argument("--where", help="Filter condition (e.g. 'col=val')")
+    p_read.add_argument("--format", default="hudi", choices=["hudi", "iceberg"], help="Table format (hudi or iceberg)")
 
     # DELETE Command
     p_delete = subparsers.add_parser("delete", help="Delete records")

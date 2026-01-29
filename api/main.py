@@ -512,18 +512,21 @@ def get_hudi_table_schema(table: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/hudi/{table}/read")
-def read_hudi_table_dynamic(
+@app.get("/data/{table}/read")
+def read_table_dynamic(
     table: str, 
     columns: str = "*", 
     limit: int = 100, 
     filter_col: str = None, 
-    filter_val: str = None
+    filter_val: str = None,
+    catalog: str = "hudi"
 ):
     """
-    Read data from Hudi table using simple parameters.
+    Read data from Hive/Iceberg/Hudi table using simple parameters.
     - columns: Comma-separated list of columns to fetch (default: all).
     - filter_col: Column name to filter by (equality check).
     - filter_val: Value to match.
+    - catalog: 'hudi' (default) or 'iceberg'
     """
     try:
         # Sanitize columns to prevent injection
@@ -544,13 +547,13 @@ def read_hudi_table_dynamic(
             
         sql += f" LIMIT {limit}"
         
-        print(f"Generated SQL: {sql}")
+        print(f"Generated SQL: {sql} [Catalog: {catalog}]")
         
         conn = trino.dbapi.connect(
             host='localhost',
             port=8082,
             user='admin',
-            catalog='hudi',
+            catalog=catalog,
             schema='default'
         )
         cur = conn.cursor()
