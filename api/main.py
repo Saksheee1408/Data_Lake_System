@@ -591,6 +591,51 @@ def drop_hudi_table(table: str):
         print(f"Drop Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.post("/ingest")
+async def ingest_dynamic(
+    table: str = Form(...),
+    file: UploadFile = File(...),
+    format: str = Form("iceberg"),  # 'iceberg' or 'hudi'
+    mode: str = Form("append"),     # 'append' or 'overwrite' (Iceberg only)
+    pkey: str = Form(None),         # Required for Hudi
+    partition: str = Form(None),    # Optional partition field
+    precombine: str = Form(None)    # Optional precombine field (Hudi)
+):
+    """
+    Unified Dynamic Ingestion Endpoint.
+    - Supports 'iceberg' (via Spark) and 'hudi' (via Spark).
+    - Automatically routes to the appropriate backend script.
+    """
+    print(f"Received dynamic ingestion request for {table} [{format}]")
+    
+    # Normalize format
+    format = format.lower()
+    
+    if format == 'hudi':
+        # Route to Hudi Ingestion
+        # We can reuse the logic from ingest_hudi_table or call it directly if refactored, 
+        # but for now we'll duplicate the logic to ensure clean argument handling
+        return await ingest_hudi_table(table, pkey, file, partition, precombine)
+        
+    elif format == 'iceberg':
+        # Route to Iceberg Spark Ingestion
+        return await ingest_iceberg_spark(table, file, mode)
+        
+    else:
+        raise HTTPException(status_code=400, detail=f"Unsupported format: {format}. Use 'iceberg' or 'hudi'.")
+
+@app.post("/query")
+def query_dynamic(
+    query: str = Form(...),
+    catalog: str = Form("iceberg")
+):
+    """
+    Unified Query Endpoint using Trino.
+    - catalog: 'iceberg' or 'hudi'
+    """
+    return query_trino_generic(query, catalog)
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
